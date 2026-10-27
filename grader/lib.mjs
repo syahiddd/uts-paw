@@ -3,6 +3,11 @@ import { readFileSync } from 'node:fs'
 
 export const UTS = JSON.parse(readFileSync(new URL('../shared/uts.json', import.meta.url), 'utf8'))
 
+// Nilai maksimal = rubrik + bonus. Dihitung dari uts.json di satu tempat ini (portal memakai
+// rumus yang sama di portal/src/uts.js), jadi grader, laporan, dan portal selalu sinkron.
+export const NILAI_RUBRIK = UTS.rubrik.flatMap((k) => k.butir).reduce((s, b) => s + b.bobot, 0)
+export const NILAI_MAKS = NILAI_RUBRIK + (UTS.bonus?.bobot ?? 0)
+
 export function temaUntukNim(nim) {
   const akhir = String(nim).trim().slice(-1)
   return /\d/.test(akhir) ? UTS.tema.find((t) => t.digit === Number(akhir)) : undefined

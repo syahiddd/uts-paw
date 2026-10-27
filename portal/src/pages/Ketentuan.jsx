@@ -63,13 +63,16 @@ export default function Ketentuan() {
           <li>Menyalin kode dari mahasiswa lain, memberikan kodemu kepada orang lain, atau meminta orang lain mengerjakan.</li>
           <li>Memakai NIM atau identitas orang lain, atau membuat lebih dari satu fork untuk satu NIM.</li>
           <li>Mulai mengerjakan di repo sebelum waktu kelasmu dibuka.</li>
-          <li>Mengubah <code>.github/workflows/</code>, <code>grader/</code>, atau <code>shared/</code> untuk memengaruhi penilaian.</li>
+          <li>
+            Mengubah <code>.github/workflows/</code>, <code>grader/</code>, atau <code>shared/</code>, maupun skrip npm, konfigurasi
+            build atau uji, dan dependensi alat uji, untuk memengaruhi penilaian.
+          </li>
         </ol>
 
         <h2>Pemeriksaan integritas otomatis</h2>
         <p>
-          Selain rubrik, setiap fork diperiksa terhadap indikasi berikut. Pemeriksaan I1 dan I3 juga muncul di <code>npm run cek</code> dan
-          di ringkasan Actions, jadi kamu bisa melihatnya sebelum tenggat.
+          Selain rubrik, setiap fork diperiksa terhadap indikasi berikut. Pemeriksaan ini hanya dijalankan saat penilaian dosen, tidak
+          muncul di <code>npm run cek</code> maupun ringkasan Actions, dan cara serta ambang pemeriksaannya tidak diumumkan.
         </p>
         <Table rowKey="id" size="middle" pagination={false} columns={kolomIntegritas} dataSource={UTS.integritas} />
         <p>

@@ -2,7 +2,7 @@ import { useState } from 'react'
 import { Link } from 'react-router-dom'
 import { Alert, Button, Card, Input, Space, Statistic, Tag } from 'antd'
 import { ArrowRightOutlined, GithubOutlined } from '@ant-design/icons'
-import UTS, { KELAS, URL_REPO, statusKelas, tanggalWib, temaUntukNim } from '../uts.js'
+import UTS, { KELAS, NILAI_MAKS, NILAI_RUBRIK, URL_REPO, statusKelas, tanggalWib, temaUntukNim } from '../uts.js'
 
 const ALUR = [
   { judul: 'Fork', isi: 'Fork repo induk ke akun GitHub kamu, lalu aktifkan Actions dan Pages.' },
@@ -137,7 +137,7 @@ export default function Beranda() {
               <strong>Dilarang memakai AI generatif</strong> untuk menulis kode. Baca <Link to="/ketentuan">ketentuan dan pelanggaran</Link>.
             </li>
             <li>Setiap kode yang diminta punya contoh di halaman <Link to="/contoh">Contoh Kode</Link>.</li>
-            <li>Rubrik bernilai 100 dan diperiksa otomatis. Lihat <Link to="/rubrik">rincian rubrik</Link>.</li>
+            <li>Rubrik bernilai {NILAI_RUBRIK} ditambah bonus {UTS.bonus?.bobot ?? 0}, nilai maksimal {NILAI_MAKS}, dan diperiksa otomatis. Lihat <Link to="/rubrik">rincian rubrik</Link>.</li>
             <li>Kamu wajib memahami setiap baris kode yang dikumpulkan. Dosen dapat meminta demo atau penjelasan lisan.</li>
             <li>Materi pendukung tersedia di halaman <Link to="/materi">Materi</Link>.</li>
           </ul>

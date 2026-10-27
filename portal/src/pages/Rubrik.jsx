@@ -2,10 +2,10 @@ import { Link } from 'react-router-dom'
 import { Table, Tag } from 'antd'
 import KepalaHalaman from '../components/KepalaHalaman.jsx'
 import Kode from '../components/Kode.jsx'
-import UTS from '../uts.js'
+import UTS, { NILAI_MAKS, NILAI_RUBRIK } from '../uts.js'
 
 const BARIS = UTS.rubrik.flatMap((k) => k.butir.map((b) => ({ ...b, kelompok: k.nama, materi: k.materi })))
-const totalBobot = BARIS.reduce((s, b) => s + b.bobot, 0)
+const BONUS = UTS.bonus
 
 const kolom = [
   { title: 'Butir', dataIndex: 'id', width: 72, render: (v) => <strong>{v}</strong> },
@@ -24,8 +24,9 @@ const kolomRingkas = [
 export default function Rubrik() {
   return (
     <>
-      <KepalaHalaman kicker="Rubrik" judul={`Rubrik penilaian, total ${totalBobot} poin`}>
-        Setiap butir dinilai lulus atau tidak lulus secara otomatis dan bernilai penuh bila lulus. Pemeriksa yang sama
+      <KepalaHalaman kicker="Rubrik" judul={`Rubrik penilaian, nilai maksimal ${NILAI_MAKS}`}>
+        Rubrik bernilai {NILAI_RUBRIK}{BONUS && <>, ditambah bonus {BONUS.bobot}</>}, sehingga nilai maksimal {NILAI_MAKS}. Setiap butir
+        dinilai lulus atau tidak lulus secara otomatis dan bernilai penuh bila lulus. Pemeriksa yang sama
         tersedia untuk kamu jalankan sendiri.
       </KepalaHalaman>
 
@@ -40,6 +41,18 @@ export default function Rubrik() {
             <Table rowKey="id" size="middle" pagination={false} columns={kolom} dataSource={BARIS.filter((b) => b.kelompok === k.nama)} />
           </section>
         ))}
+
+        {BONUS && (
+          <section>
+            <h2 id="bonus">Bonus</h2>
+            <p>
+              Bonus {BONUS.bobot} poin ditambahkan di atas {NILAI_RUBRIK} poin rubrik, jadi nilai maksimal {NILAI_MAKS}. Selektor id dan kelas hanya
+              dihitung bila namanya benar-benar dipakai di komponen (atribut <code>id</code> atau <code>className</code>); selektor yang
+              tidak pernah tampil tidak dihitung.
+            </p>
+            <Table rowKey="id" size="middle" pagination={false} columns={kolom} dataSource={[BONUS]} />
+          </section>
+        )}
 
         <h2>Cara nilai dihitung</h2>
         <ol>
@@ -61,7 +74,7 @@ export default function Rubrik() {
         <h2>Cek mandiri</h2>
         <p>
           Jalankan perintah ini di folder <code>app/</code>. Hasilnya sama dengan ringkasan yang muncul di tab Actions
-          setiap kali kamu push.
+          setiap kali kamu push. Cek mandiri hanya menghitung rubrik dan bonus; pemeriksaan integritas tidak ikut dijalankan.
         </p>
         <Kode label="Terminal, di folder app/">npm run cek</Kode>
       </div>

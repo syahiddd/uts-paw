@@ -2,6 +2,10 @@ import UTS from '../../shared/uts.json'
 
 export default UTS
 
+// Rumus yang sama dengan grader/lib.mjs: nilai maksimal = rubrik + bonus.
+export const NILAI_RUBRIK = UTS.rubrik.flatMap((k) => k.butir).reduce((s, b) => s + b.bobot, 0)
+export const NILAI_MAKS = NILAI_RUBRIK + (UTS.bonus?.bobot ?? 0)
+
 export const URL_REPO = `https://github.com/${UTS.repoInduk}`
 
 export const KELAS = Object.entries(UTS.kelas).map(([kode, j]) => ({

@@ -9,8 +9,10 @@ on:
     branches: [main]
   workflow_dispatch:
   schedule:
-    # Memperbarui halaman Pengumpulan setiap jam (hanya di repo induk).
-    - cron: '17 * * * *'
+    # Memperbarui halaman Pengumpulan (hanya di repo induk). Jadwal GitHub tidak dijamin tepat
+    # waktu dan sering dilewati saat ramai, jadi dibuat rapat; portal juga membaca daftar fork
+    # langsung dari API GitHub sehingga fork baru tetap muncul di antara dua jadwal.
+    - cron: '7,27,47 * * * *'
 
 permissions:
   contents: read

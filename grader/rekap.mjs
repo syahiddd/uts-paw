@@ -1,64 +1,77 @@
 #!/usr/bin/env node
-// Menggabungkan hasil per fork menjadi nilai.csv dan laporan.md, lalu menambahkan
-// indikasi yang hanya terlihat lintas fork (NIM ganda, kemiripan kode).
-//   node grader/rekap.mjs <folder-hasil> [folder-keluaran]
+// Menggabungkan hasil per fork menjadi nilai.csv dan laporan.md, lalu menjalankan pemeriksaan
+// integritas (per fork dan lintas fork) pada arsip bundle tiap fork.
+//   node grader/rekap.mjs <folder-hasil> [folder-keluaran] [--integritas modul.mjs] [--kunci kunci.pem] [--sandi kunci-publik.pem]
+//
+// --integritas  modul pemeriksaan integritas privat (bawaan: env UTS_INTEGRITAS). Modul ini tidak
+//               ada di repo publik; tanpa modul, rekap tetap jalan tanpa indikasi integritas.
+// --kunci       kunci privat untuk membuka hasil *.json.enc (bawaan: env KUNCI_REKAP berisi PEM).
+// --sandi       kunci publik; seluruh keluaran dikemas jadi <keluaran>.tgz.enc dan versi
+//               terbukanya dihapus, karena artifact dan ringkasan run di repo publik bisa dibaca siapa pun.
+import { spawnSync } from 'node:child_process'
 import { createHash } from 'node:crypto'
-import { appendFileSync, existsSync, mkdirSync, readFileSync, readdirSync, writeFileSync } from 'node:fs'
-import { join } from 'node:path'
-import { fileURLToPath } from 'node:url'
-import { bacaPenanda, cekPenandaRepo } from './integritas.mjs'
-import { UTS } from './lib.mjs'
-import { sidikJari } from './periksa.mjs'
+import { appendFileSync, existsSync, mkdirSync, mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
+import { join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import { UTS, namaCocok } from './lib.mjs'
+import { formatTotal } from './periksa.mjs'
+import { buka, kunci } from './sandi.mjs'
 
-const [masuk = 'hasil', keluar = masuk] = process.argv.slice(2)
-const AMBANG_KEMIRIPAN = 0.6
+const posisi = process.argv.slice(2).filter((a, i, arr) => !a.startsWith('--') && !arr[i - 1]?.startsWith('--'))
+const opsi = (nama) => {
+  const i = process.argv.indexOf(`--${nama}`)
+  return i > -1 ? process.argv[i + 1] : undefined
+}
+const [masuk = 'hasil', keluar = masuk] = posisi
 const URUTAN_TINGKAT = { tinggi: 0, sedang: 1, rendah: 2 }
+const akar = fileURLToPath(new URL('..', import.meta.url))
+
+const pemKunci = opsi('kunci') ? readFileSync(opsi('kunci'), 'utf8') : process.env.KUNCI_REKAP
+const bacaHasil = (f) => {
+  const isi = readFileSync(join(masuk, f))
+  if (!f.endsWith('.enc')) return JSON.parse(isi)
+  if (!pemKunci) throw new Error(`${f} terenkripsi; berikan --kunci atau env KUNCI_REKAP`)
+  return JSON.parse(buka(isi, pemKunci))
+}
 
 const semua = readdirSync(masuk, { recursive: true })
-  .filter((f) => String(f).endsWith('.json'))
-  .map((f) => JSON.parse(readFileSync(join(masuk, String(f)), 'utf8')))
+  .map(String)
+  .filter((f) => f.endsWith('.json') || f.endsWith('.json.enc'))
+  .map(bacaHasil)
   .filter((h) => h.repo)
-  .map((h) => ({ ...h, integritas: [...(h.integritas ?? [])] }))
+  .map((h) => ({ ...h, integritas: [] }))
   .sort((a, b) => String(a.mahasiswa?.nim ?? '').localeCompare(String(b.mahasiswa?.nim ?? '')))
 
-const label = (h) => `${h.mahasiswa?.nama || h.repo} (${h.mahasiswa?.nim || '-'})`
+const berkasPrivat = opsi('integritas') ?? process.env.UTS_INTEGRITAS
+const privat = berkasPrivat && existsSync(berkasPrivat) ? await import(pathToFileURL(resolve(berkasPrivat)).href) : null
+if (!privat) console.warn('Modul integritas privat tidak tersedia; rekap dibuat tanpa indikasi integritas.')
 
-// I6: satu NIM dipakai lebih dari satu fork.
-const perNim = Object.groupBy(semua.filter((h) => h.mahasiswa?.nim), (h) => h.mahasiswa.nim)
-for (const [nim, grup] of Object.entries(perNim)) {
-  if (grup.length < 2) continue
-  for (const h of grup) h.integritas.push({ id: 'I6', tingkat: 'tinggi', pesan: `NIM ${nim} juga dipakai oleh ${grup.filter((x) => x !== h).map((x) => x.repo).join(', ')}` })
-}
-
-// I9: pola tambahan, diperiksa ulang dari GitHub pada commit yang dinilai.
-const penanda = bacaPenanda()
-if (penanda.length) {
-  for (const h of semua.filter((x) => x.sha)) h.integritas.push(...cekPenandaRepo(h.repo, h.sha, penanda))
-}
-
-// I7: kemiripan Jaccard antar sidik jari, setelah token starter dan contoh resmi dibuang
-// (mahasiswa memang dipersilakan mengikuti contoh, jadi bagian itu tidak dihitung).
-const akar = fileURLToPath(new URL('..', import.meta.url))
-const resmi = new Set([join(akar, 'app/src'), join(akar, 'shared/contoh')].filter(existsSync).flatMap((d) => sidikJari(d)))
-const jari = semua.map((h) => new Set((h.sidikJari ?? []).filter((x) => !resmi.has(x))))
-const mirip = []
-for (let i = 0; i < semua.length; i++) {
-  for (let j = i + 1; j < semua.length; j++) {
-    const [a, b] = [jari[i], jari[j]]
-    if (a.size < 50 || b.size < 50) continue
-    let irisan = 0
-    for (const x of a) if (b.has(x)) irisan++
-    const skor = irisan / (a.size + b.size - irisan)
-    if (skor < AMBANG_KEMIRIPAN) continue
-    mirip.push({ a: semua[i], b: semua[j], skor })
-    const persen = `${Math.round(skor * 100)}%`
-    semua[i].integritas.push({ id: 'I7', tingkat: 'tinggi', pesan: `${persen} mirip dengan ${label(semua[j])}` })
-    semua[j].integritas.push({ id: 'I7', tingkat: 'tinggi', pesan: `${persen} mirip dengan ${label(semua[i])}` })
+// Arsip dibuat sebelum kode mahasiswa dijalankan; SHA-256-nya dicatat saat itu juga.
+// Bundle yang isinya tidak cocok lagi berarti diubah setelahnya.
+const daftar = semua.map((h) => {
+  if (!h.sha || !h.arsip?.berkas) return { h, dir: null }
+  const bundle = join(masuk, 'arsip', h.arsip.berkas)
+  if (!existsSync(bundle)) return { h, dir: null }
+  if (createHash('sha256').update(readFileSync(bundle)).digest('hex') !== h.arsip.sha256) {
+    h.integritas.push({ id: 'I10', tingkat: 'tinggi', pesan: 'arsip bundle berubah setelah dibuat' })
+    return { h, dir: null }
   }
-}
-mirip.sort((x, y) => y.skor - x.skor)
+  const dir = mkdtempSync(join(tmpdir(), 'uts-rekap-'))
+  const r = spawnSync('git', ['clone', '--quiet', '--branch', 'dinilai', bundle, dir], { encoding: 'utf8' })
+  return { h, dir: r.status === 0 ? dir : null }
+})
 
-const ids = UTS.rubrik.flatMap((k) => k.butir.map((b) => b.id))
+let jumlahPasanganMirip = 0
+if (privat) {
+  const lib = { UTS, namaCocok }
+  for (const { h, dir } of daftar) if (dir) h.integritas.push(...privat.periksaFork({ dir, h, akar, lib }))
+  jumlahPasanganMirip = privat.lintasFork(daftar, { akar, lib }).length
+}
+for (const { dir } of daftar) if (dir) rmSync(dir, { recursive: true, force: true })
+
+const label = (h) => `${h.mahasiswa?.nama || h.repo} (${h.mahasiswa?.nim || '-'})`
+const ids = [...UTS.rubrik.flatMap((k) => k.butir.map((b) => b.id)), ...(UTS.bonus ? [UTS.bonus.id] : [])]
 const csv = (v) => `"${String(v ?? '').replace(/"/g, '""')}"`
 const ringkasIndikasi = (h) => h.integritas.map((i) => i.id).filter((v, k, arr) => arr.indexOf(v) === k).join(' ')
 const header = ['nim', 'nama', 'kelas', 'terdaftar', 'tema', 'repo', 'url', 'commit', 'waktu_push', 'tenggat', 'bukti_waktu', 'total', ...ids, 'indikasi', 'catatan']
@@ -118,7 +131,7 @@ for (const h of semua) {
     h.sha ? `- Commit yang dinilai: [${h.sha.slice(0, 7)}](https://github.com/${h.repo}/commit/${h.sha}), push ${h.waktu ?? '-'} (${h.bukti ?? '-'})` : `- Commit yang dinilai: ${h.catatan ?? 'tidak ada'}`,
     h.url ? `- Situs: ${h.url}` : '',
     '',
-    `## Nilai: ${h.total ?? 0}/100`,
+    `## Nilai: ${formatTotal(h.total ?? 0)}`,
     '',
     '| Butir | Kriteria | Skor |',
     '|---|---|---|',
@@ -144,7 +157,7 @@ const jadwal = Object.entries(UTS.kelas).map(([k, j]) => `${k} ${j.dibuka} s.d. 
 const md = [
   `# Rekap Nilai ${UTS.judul} ${UTS.mataKuliah}`,
   '',
-  `Jadwal: ${jadwal}. Jumlah fork dinilai: ${semua.length}.`,
+  `Jadwal: ${jadwal}. Jumlah fork dinilai: ${semua.length}. Modul integritas: ${privat ? `versi ${privat.VERSI}` : 'tidak tersedia'}.${privat ? ` Pasangan kode mirip: ${jumlahPasanganMirip}.` : ''}`,
   '',
   '| NIM | Nama | Kelas | Terdaftar | Total | Indikasi | Laporan | Catatan |',
   '|---|---|---|---|---|---|---|---|',
@@ -163,5 +176,25 @@ const md = [
   'Indikasi bukan bukti. Sesuai kontrak kuliah, nilai 0 hanya diberikan bila mencontek atau kerja sama terbukti; mintalah demo atau penjelasan lisan sebelum memutuskan.',
 ].join('\n')
 writeFileSync(join(keluar, 'laporan.md'), md + '\n')
-if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, md)
-console.log(`Rekap ${semua.length} fork (${berindikasi.length} dengan indikasi) ditulis ke ${keluar}/nilai.csv dan ${keluar}/laporan.md`)
+
+const sandi = opsi('sandi')
+if (sandi) {
+  const tar = spawnSync('tar', ['-czf', '-', '-C', keluar, '.'], { maxBuffer: 1024 * 1024 * 1024 })
+  if (tar.status !== 0) throw new Error(`tar gagal: ${tar.stderr}`)
+  const berkas = `${resolve(keluar)}.tgz.enc`
+  writeFileSync(berkas, kunci(tar.stdout, readFileSync(sandi, 'utf8')))
+  rmSync(keluar, { recursive: true, force: true })
+  // Ringkasan run repo publik bisa dibaca siapa pun: hanya angka agregat tanpa nama atau nilai.
+  const ringkas = [
+    `# Rekap ${UTS.judul}`,
+    '',
+    `${semua.length} fork dinilai, ${berindikasi.length} dengan indikasi integritas. Modul integritas: ${privat ? 'terpasang' : 'TIDAK terpasang'}.`,
+    '',
+    `Hasil terenkripsi di artifact \`rekap-nilai\`. Sidik jari SHA-256 manifest: \`${sidikManifest}\`.`,
+  ].join('\n')
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, ringkas)
+  console.log(`Rekap ${semua.length} fork dienkripsi ke ${berkas}`)
+} else {
+  if (process.env.GITHUB_STEP_SUMMARY) appendFileSync(process.env.GITHUB_STEP_SUMMARY, md)
+  console.log(`Rekap ${semua.length} fork (${berindikasi.length} dengan indikasi) ditulis ke ${keluar}/nilai.csv dan ${keluar}/laporan.md`)
+}

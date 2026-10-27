@@ -1,7 +1,9 @@
 # Penilaian akhir oleh dosen. Semua kelas dinilai bersamaan secara otomatis pada Senin pagi
 # (setiap fork tetap memakai tenggat kelasnya sendiri), dan bisa dijalankan manual dari tab Actions.
-# Hasil: artifact "rekap-nilai" (nilai.csv, laporan.md, laporan per mahasiswa di mahasiswa/,
-# manifest-bukti.json) dan "arsip-bukti" (git bundle setiap fork pada commit yang dinilai).
+# Hasil: artifact "rekap-nilai" (rekap.tgz.enc berisi nilai.csv, laporan.md, laporan per mahasiswa,
+# dan manifest-bukti.json) dan "arsip-bukti" (git bundle setiap fork pada commit yang dinilai).
+# Artifact dan log repo publik bisa dibaca siapa pun, jadi nilai dan indikasi selalu terenkripsi
+# dengan grader/kunci-publik.pem; buka dengan: node grader/sandi.mjs buka rekap.tgz.enc <kunci-privat.pem> rekap
 name: Penilaian Ujian Tengah Semester
 
 on:
@@ -71,11 +73,17 @@ jobs:
           REPO: ${{ matrix.repo }}
         run: node grader/periksa.mjs --target "$REPO" > "$RUNNER_TEMP/target.json"
 
+      # Kode mahasiswa (npm ci, build, lint, test) berjalan sebagai pengguna "mhs" yang tidak bisa
+      # menulis ke workspace ini; grader mematikan semua prosesnya setelah setiap perintah.
+      - name: Siapkan pengguna terpisah untuk kode mahasiswa
+        run: sudo useradd --create-home mhs
+
       - name: Nilai
         env:
           REPO: ${{ matrix.repo }}
+          UTS_PENGGUNA_UJI: mhs
         run: |
-          node grader/periksa.mjs --repo "$REPO" --target-file "$RUNNER_TEMP/target.json" --out hasil
+          node grader/periksa.mjs --repo "$REPO" --target-file "$RUNNER_TEMP/target.json" --out hasil --sandi grader/kunci-publik.pem
           echo "ARTIFACT=hasil-${REPO//\//__}" >> "$GITHUB_ENV"
 
       - uses: actions/upload-artifact@v7
@@ -100,19 +108,26 @@ jobs:
           pattern: hasil-*
           merge-multiple: true
           path: hasil
+      # Job ini tidak menjalankan kode mahasiswa (fork hanya dibaca dari arsip bundle), jadi
+      # aman menerima kunci privat dan modul integritas privat.
       - name: Rekap
         env:
           PENANDA_TERSEMBUNYI: ${{ secrets.PENANDA_TERSEMBUNYI }}
-        run: node grader/rekap.mjs hasil rekap
+          KUNCI_REKAP: ${{ secrets.KUNCI_REKAP }}
+          INTEGRITAS_PRIVAT: ${{ secrets.INTEGRITAS_PRIVAT }}
+        run: |
+          if [ -n "$INTEGRITAS_PRIVAT" ]; then
+            printf '%s\n' "$INTEGRITAS_PRIVAT" > "$RUNNER_TEMP/integritas.mjs"
+            export UTS_INTEGRITAS="$RUNNER_TEMP/integritas.mjs"
+          fi
+          node grader/rekap.mjs hasil rekap --sandi grader/kunci-publik.pem
       - uses: actions/upload-artifact@v7
         with:
           name: rekap-nilai
-          path: rekap/
+          path: rekap.tgz.enc
           retention-days: 90
       - uses: actions/upload-artifact@v7
         with:
           name: arsip-bukti
-          path: |
-            hasil/arsip/
-            rekap/manifest-bukti.json
+          path: hasil/arsip/
           retention-days: 90

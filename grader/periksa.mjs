@@ -9,17 +9,27 @@
 // Opsi: --url <url-pages> (paksa URL deployment), --out <folder> (simpan hasil JSON),
 // --target-file <berkas> (pakai hasil --target, sehingga --repo berjalan tanpa token GitHub;
 // dipakai workflow nilai.yml agar kode mahasiswa tidak pernah dijalankan bersama token),
-// --daftar-kelas <berkas> (data kelas; di CI dibaca dari secret DAFTAR_KELAS).
+// --daftar-kelas <berkas> (data kelas; di CI dibaca dari secret DAFTAR_KELAS),
+// --sandi <kunci-publik.pem> (enkripsi hasil di --out; artifact repo publik bisa dibaca siapa pun).
+//
+// Pemeriksaan integritas tidak ada di sini. Modulnya privat dan hanya dijalankan oleh
+// rekap.mjs di repo induk, jadi cek mandiri tidak bisa dipakai untuk menguji cara mengelabuinya.
 import { spawnSync } from 'node:child_process'
-import { createHash } from 'node:crypto'
-import { appendFileSync, cpSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
+import { createHash, randomBytes } from 'node:crypto'
+import { appendFileSync, chmodSync, existsSync, mkdirSync, mkdtempSync, readdirSync, readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { basename, dirname, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
-import { cekBerkas, cekIdentitasDanWaktu, cekRiwayat } from './integritas.mjs'
-import { TENGGAT_TERAKHIR, UTS, api, bacaDaftarKelas, bacaMahasiswaFork, daftarFork, jadwalKelas, situsMemuatApp, temaUntukNim, urlPages } from './lib.mjs'
+import { NILAI_MAKS, TENGGAT_TERAKHIR, UTS, api, bacaDaftarKelas, bacaMahasiswaFork, daftarFork, jadwalKelas, situsMemuatApp, temaUntukNim, urlPages } from './lib.mjs'
+import { kunci } from './sandi.mjs'
 
 const GRADER = dirname(fileURLToPath(import.meta.url))
+
+// Dibaca sekali sebelum kode mahasiswa dijalankan, supaya skrip build atau test di fork
+// tidak bisa mengganti berkas uji dosen di workspace sebelum berkas itu dipakai.
+const UJI_RUBRIK = readFileSync(join(GRADER, 'uji/rubrik.test.jsx'), 'utf8')
+const KONFIG_LINT = readFileSync(join(GRADER, 'oxlintrc.json'), 'utf8')
+const BONUS = UTS.bonus
 
 function arg(nama) {
   const i = process.argv.indexOf(`--${nama}`)
@@ -31,6 +41,27 @@ function arg(nama) {
 function jalankan(cmd, args, cwd) {
   const r = spawnSync(cmd, args, { cwd, encoding: 'utf8', shell: process.platform === 'win32', maxBuffer: 64 * 1024 * 1024 })
   return { ok: r.status === 0, keluaran: `${r.stdout ?? ''}${r.stderr ?? ''}` }
+}
+
+// Di nilai.yml (UTS_PENGGUNA_UJI diisi) kode mahasiswa berjalan sebagai pengguna Linux terpisah
+// yang tidak punya hak tulis ke workspace grader, dan semua prosesnya dimatikan setelah setiap
+// perintah, jadi tidak ada proses yang tertinggal untuk mengubah berkas uji atau hasil.
+const PENGGUNA = process.env.UTS_PENGGUNA_UJI
+
+function jalankanKode(cmd, args, cwd) {
+  if (!PENGGUNA) return jalankan(cmd, args, cwd)
+  const r = jalankan('sudo', ['-u', PENGGUNA, '-H', 'env', `PATH=${process.env.PATH}`, 'CI=true', cmd, ...args], cwd)
+  spawnSync('sudo', ['pkill', '-9', '-u', PENGGUNA])
+  return r
+}
+
+function bukaAkses(dir) {
+  if (PENGGUNA) spawnSync('chmod', ['-R', 'a+rwX', dir])
+}
+
+function hapus(path) {
+  if (PENGGUNA) spawnSync('sudo', ['rm', '-rf', path])
+  else rmSync(path, { recursive: true, force: true })
 }
 
 function bacaJson(path) {
@@ -135,6 +166,35 @@ function cekStatis(appDir) {
   return Object.fromEntries(Object.entries(hasil).map(([k, [ok, ket]]) => [k, [ok, ok ? '' : `belum terpenuhi: ${ket}`]]))
 }
 
+// Bonus: selektor di berkas .css sendiri. Selektor id dan kelas hanya dihitung bila namanya
+// dipakai di kode komponen, supaya CSS yang tidak pernah tampil tidak ikut dihitung.
+function cekBonus(appDir) {
+  const src = join(appDir, 'src')
+  const css = semuaBerkas(src, (n) => n.endsWith('.css'))
+    .map((p) => readFileSync(p, 'utf8'))
+    .join('\n')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+  const kode = semuaBerkas(src, (n) => /\.[jt]sx?$/.test(n))
+    .filter((p) => !isTest(p))
+    .map((p) => readFileSync(p, 'utf8'))
+    .join('\n')
+  const selektor = [...css.matchAll(/(?:^|[{};])\s*([^{};]+?)\s*\{/g)]
+    .map((m) => m[1].replace(/\[[^\]]*\]/g, ''))
+    .filter((s) => !s.startsWith('@') && !/^(from|to|[\d.]+%)\b/.test(s))
+    .join(' ')
+  const unik = (re) => [...new Set([...selektor.matchAll(re)].map((m) => m[1]))]
+  const escape = (s) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')
+  const dipakai = (nama) => new RegExp(`(^|[\\s"'\`{.])${escape(nama)}($|[\\s"'\`}])`, 'm').test(kode)
+  const jumlah = {
+    id: unik(/#(-?[A-Za-z_][\w-]*)/g).filter(dipakai).length,
+    kelas: unik(/\.(-?[A-Za-z_][\w-]*)/g).filter(dipakai).length,
+    pseudo: unik(/::?(-?[A-Za-z][\w-]*)/g).filter((n) => n !== 'root').length,
+  }
+  const kurang = Object.entries(BONUS.syarat).filter(([k, min]) => jumlah[k] < min)
+  const ringkas = `${jumlah.id} id, ${jumlah.kelas} kelas, ${jumlah.pseudo} pseudo`
+  return [kurang.length === 0, kurang.length ? `baru ${ringkas} (syarat ${Object.entries(BONUS.syarat).map(([k, v]) => `${v} ${k}`).join(', ')})` : ringkas]
+}
+
 function hasilVitest(path) {
   const json = bacaJson(path)
   return (json?.testResults ?? []).flatMap((f) => f.assertionResults ?? [])
@@ -142,8 +202,7 @@ function hasilVitest(path) {
 
 function cekTestSendiri(appDir, kerja) {
   const out = join(kerja, 'vitest-mahasiswa.json')
-  rmSync(join(appDir, 'src/__rubrik__'), { recursive: true, force: true })
-  jalankan('npx', ['vitest', 'run', '--reporter=json', `--outputFile=${out}`], appDir)
+  jalankanKode('npx', ['vitest', 'run', '--reporter=json', `--outputFile=${out}`], appDir)
   const tests = hasilVitest(out)
   const gagal = tests.filter((t) => t.status !== 'passed')
   return {
@@ -152,16 +211,39 @@ function cekTestSendiri(appDir, kerja) {
   }
 }
 
+// Uji dosen memakai konfigurasi Vitest milik grader, bukan vite.config fork: plugin, alias,
+// reporter, atau globalSetup buatan mahasiswa tidak ikut berjalan. Folder ujinya bernama acak
+// dan isinya dicek ulang sebelum dijalankan.
+function konfigVitest(folder) {
+  return `import react from '@vitejs/plugin-react'
+import { existsSync } from 'node:fs'
+export default {
+  configFile: false,
+  plugins: [react()],
+  test: {
+    environment: 'jsdom',
+    include: ['src/${folder}/rubrik.test.jsx'],
+    setupFiles: existsSync('src/setupTests.js') ? ['./src/setupTests.js'] : [],
+  },
+}
+`
+}
+
 function cekUjiDosen(appDir, kerja) {
-  const tujuan = join(appDir, 'src/__rubrik__')
-  rmSync(tujuan, { recursive: true, force: true })
+  const folder = `__rubrik__${randomBytes(6).toString('hex')}`
+  const tujuan = join(appDir, 'src', folder)
   mkdirSync(tujuan, { recursive: true })
-  cpSync(join(GRADER, 'uji/rubrik.test.jsx'), join(tujuan, 'rubrik.test.jsx'))
+  writeFileSync(join(tujuan, 'rubrik.test.jsx'), UJI_RUBRIK)
   writeFileSync(join(tujuan, 'tema.json'), JSON.stringify(UTS.tema))
+  writeFileSync(join(tujuan, 'vitest.config.mjs'), konfigVitest(folder))
+  bukaAkses(tujuan)
+  const utuh = readFileSync(join(tujuan, 'rubrik.test.jsx'), 'utf8') === UJI_RUBRIK
   const out = join(kerja, 'vitest-rubrik.json')
-  const r = jalankan('npx', ['vitest', 'run', 'src/__rubrik__/rubrik.test.jsx', '--reporter=json', `--outputFile=${out}`], appDir)
-  rmSync(tujuan, { recursive: true, force: true })
-  const tests = hasilVitest(out)
+  const r = utuh
+    ? jalankanKode('npx', ['vitest', 'run', '--config', `src/${folder}/vitest.config.mjs`, '--root', '.', '--reporter=json', `--outputFile=${out}`], appDir)
+    : { keluaran: 'error: berkas uji dosen berubah sebelum dijalankan' }
+  hapus(tujuan)
+  const tests = utuh ? hasilVitest(out) : []
   const ids = ['C2', 'C3', 'C4', 'C5', 'C6', 'C7', 'C8', 'C9', 'C10', 'C11', 'C12', 'C13', 'C14', 'E1']
   return Object.fromEntries(
     ids.map((id) => {
@@ -180,16 +262,12 @@ export async function periksa({ appDir, url, pasang = false, konteks = { daftar:
   const kerja = mkdtempSync(join(tmpdir(), 'uts-paw-'))
   const butir = {}
   const catat = (obj) => Object.assign(butir, obj)
+  bukaAkses(root)
+  if (PENGGUNA) chmodSync(kerja, 0o777)
 
   const { mahasiswa, tema, A1 } = cekIdentitas(appDir, konteks)
-  const integritas = [...cekBerkas(root), ...cekIdentitasDanWaktu(mahasiswa, konteks)]
-  let jumlahCommit
-  if (konteks.sha) {
-    const riwayat = cekRiwayat(root, konteks.sha)
-    integritas.push(...riwayat.hasil)
-    jumlahCommit = riwayat.jumlahCommit
-  }
-  catat({ A1, A4: cekReadme(root, mahasiswa), C1: cekData(appDir, tema) })
+  // Dihitung sebelum kode mahasiswa dijalankan, dari berkas hasil clone.
+  catat({ A1, A4: cekReadme(root, mahasiswa), C1: cekData(appDir, tema), ...cekStatis(appDir), ...(BONUS && { [BONUS.id]: cekBonus(appDir) }) })
 
   if (url) {
     const utama = await situsMemuatApp(url)
@@ -203,15 +281,17 @@ export async function periksa({ appDir, url, pasang = false, konteks = { daftar:
   }
 
   if (pasang) {
-    const install = jalankan('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], appDir)
-    if (!install.ok) jalankan('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], appDir)
+    const install = jalankanKode('npm', ['ci', '--ignore-scripts', '--no-audit', '--no-fund'], appDir)
+    if (!install.ok) jalankanKode('npm', ['install', '--ignore-scripts', '--no-audit', '--no-fund'], appDir)
   }
-  const build = jalankan('npm', ['run', 'build'], appDir)
+  const build = jalankanKode('npm', ['run', 'build'], appDir)
   // Berkas disebut satu per satu: bila folder yang diberikan, oxlint ikut membaca .gitignore
   // di folder induk dan bisa melewatkan seluruh src.
   const berkasLint = semuaBerkas(join(appDir, 'src'), (n) => /\.[jt]sx?$/.test(n)).map((p) => relative(appDir, p))
+  const konfigLint = join(kerja, 'oxlintrc.json')
+  writeFileSync(konfigLint, KONFIG_LINT)
   const lint = berkasLint.length
-    ? jalankan('npx', ['oxlint', '-c', join(GRADER, 'oxlintrc.json'), '--format', 'unix', ...berkasLint], appDir)
+    ? jalankanKode('npx', ['oxlint', '-c', konfigLint, '--format', 'unix', ...berkasLint], appDir)
     : { ok: false, keluaran: 'tidak ada berkas kode di src' }
   // Format unix: "src/App.jsx:12:5: pesan [Error/aturan]". Hanya error yang membuat B2 gagal.
   const galatLint = [...lint.keluaran.matchAll(/^(.+?):(\d+):\d+: (.*) \[Error\/[^\]]+\]$/gm)].map((m) => ({
@@ -224,12 +304,12 @@ export async function periksa({ appDir, url, pasang = false, konteks = { daftar:
     B2: [lint.ok, lint.ok ? '' : `${galatLint.length || 'beberapa'} error lint${galatLint[0] ? `, misalnya: ${galatLint[0].pesan}` : ''}`, galatLint.slice(0, 10)],
   })
 
-  catat(cekStatis(appDir))
   catat(cekTestSendiri(appDir, kerja))
   catat(cekUjiDosen(appDir, kerja))
-  rmSync(kerja, { recursive: true, force: true })
+  hapus(kerja)
 
-  const rincian = UTS.rubrik.flatMap((k) =>
+  const butirBonus = BONUS ? [{ kode: 'Bonus', butir: [BONUS] }] : []
+  const rincian = [...UTS.rubrik, ...butirBonus].flatMap((k) =>
     k.butir.map((b) => {
       const [lulus, catatan, lokasi = []] = butir[b.id] ?? [false, 'tidak diperiksa']
       return { id: b.id, kelompok: k.kode, uraian: b.uraian, bobot: b.bobot, lulus, skor: lulus ? b.bobot : 0, catatan, lokasi }
@@ -243,36 +323,17 @@ export async function periksa({ appDir, url, pasang = false, konteks = { daftar:
     url: url ?? null,
     total: rincian.reduce((s, r) => s + r.skor, 0),
     rincian,
-    integritas,
-    jumlahCommit,
-    sidikJari: sidikJari(join(appDir, 'src')),
   }
 }
 
-// Sidik jari kode untuk deteksi kemiripan antar-fork: hash 8-gram token dari
-// folder kode, tanpa berkas test. Dibandingkan oleh rekap.mjs.
-export function sidikJari(dir) {
-  const kode = semuaBerkas(dir, (n) => /\.(jsx?|tsx?|css)$/.test(n))
-    .filter((p) => !isTest(p))
-    .map((p) => readFileSync(p, 'utf8'))
-    .join('\n')
-    .replace(/\/\/.*$|\/\*[\s\S]*?\*\//gm, '')
-  const token = kode.match(/[A-Za-z_$][\w$]*|\d+|\S/g) ?? []
-  const set = new Set()
-  for (let i = 0; i + 8 <= token.length; i++) {
-    let h = 0
-    for (const ch of token.slice(i, i + 8).join(' ')) h = (Math.imul(h, 31) + ch.charCodeAt(0)) | 0
-    set.add(h)
-  }
-  return [...set]
-}
+export const formatTotal = (total) => `${total}/${NILAI_MAKS}`
 
 function laporanMarkdown(hasil) {
   const baris = hasil.rincian.map(
     (r) => `| ${r.id} | ${r.uraian} | ${r.skor}/${r.bobot} | ${r.lulus ? 'lulus' : 'belum'} | ${r.catatan.replace(/\|/g, '/')} |`,
   )
   return [
-    `## Hasil pemeriksaan Ujian Tengah Semester Pengembangan Aplikasi Web: ${hasil.total}/100`,
+    `## Hasil pemeriksaan Ujian Tengah Semester Pengembangan Aplikasi Web: ${formatTotal(hasil.total)}`,
     '',
     `Mahasiswa: ${hasil.mahasiswa.nama || '-'} (${hasil.mahasiswa.nim || '-'}), tema: ${hasil.tema ?? '-'}`,
     hasil.url ? `Deployment: ${hasil.url}` : '',
@@ -281,12 +342,7 @@ function laporanMarkdown(hasil) {
     '|---|---|---|---|---|',
     ...baris,
     '',
-    '### Pemeriksaan integritas',
-    '',
-    hasil.integritas.length
-      ? hasil.integritas.map((i) => `- **${i.id}** (${i.tingkat}): ${i.pesan}`).join('\n')
-      : 'Tidak ada indikasi dari pemeriksaan yang bisa dijalankan di sini. Riwayat commit dan kemiripan diperiksa saat penilaian dosen.',
-    '',
+    'Pemeriksaan integritas tidak dijalankan di sini; seluruhnya dilakukan saat penilaian dosen.',
     'Nilai akhir ditetapkan dosen dari commit terakhir sebelum tenggat kelasmu, memakai uji versi repo induk.',
   ].join('\n')
 }
@@ -296,11 +352,7 @@ function cetakTerminal(hasil) {
     const tanda = r.lulus ? 'LULUS' : 'BELUM'
     console.log(`${r.id.padEnd(4)} ${tanda}  ${String(r.skor).padStart(2)}/${String(r.bobot).padEnd(2)} ${r.uraian}${r.catatan ? `\n                ${r.catatan}` : ''}`)
   }
-  console.log(`\nTotal: ${hasil.total}/100`)
-  if (hasil.integritas.length) {
-    console.log('\nIndikasi integritas (ditindaklanjuti dosen, lihat halaman Ketentuan):')
-    for (const i of hasil.integritas) console.log(`  ${i.id} [${i.tingkat}] ${i.pesan}`)
-  }
+  console.log(`\nTotal: ${formatTotal(hasil.total)}`)
 }
 
 // Commit yang dinilai = push terakhir sebelum tenggat menurut waktu server
@@ -345,7 +397,9 @@ async function targetPenilaian(repo, daftarKelas) {
 // Arsip bukti: seluruh riwayat fork sampai commit yang dinilai, dalam satu berkas git bundle,
 // beserta SHA-256-nya. Dibuat sebelum kode mahasiswa dijalankan, jadi isinya tidak bisa
 // diubah oleh skrip di repo mahasiswa, dan perubahan apa pun setelahnya mengubah sidik jarinya.
-export function buatArsip(dir, repo, sha, folder) {
+export function buatArsip(dir, repo, sha, tujuan) {
+  // Absolut: git bundle dijalankan dari folder clone, jadi path relatif akan menulis ke sana.
+  const folder = resolve(tujuan)
   mkdirSync(folder, { recursive: true })
   const berkas = `${repo.replace('/', '__')}.bundle`
   jalankan('git', ['branch', '-f', 'dinilai', sha], dir)
@@ -355,23 +409,28 @@ export function buatArsip(dir, repo, sha, folder) {
   return { berkas, sha256: createHash('sha256').update(isi).digest('hex'), ukuran: isi.length }
 }
 
-async function periksaRepo(repo, outDir, targetFile, daftarKelas) {
+// konteks (data kelas mahasiswa ini, waktu fork dan push) ikut disimpan untuk pemeriksaan
+// integritas di job rekap.
+async function periksaRepo(repo, outDir, targetFile, daftarKelas, sandi) {
   const { target, ...konteks } = targetFile ? JSON.parse(readFileSync(targetFile, 'utf8')) : await targetPenilaian(repo, daftarKelas)
-  const dasar = { repo, pushTerakhir: konteks.pushTerakhir, tenggat: konteks.tenggat }
+  const dasar = { repo, pushTerakhir: konteks.pushTerakhir, tenggat: konteks.tenggat, konteks }
   let hasil
   if (!target) {
-    hasil = { ...dasar, total: 0, rincian: [], integritas: [], mahasiswa: { nim: konteks.nim }, kelas: konteks.kelas, catatan: 'tidak ada commit sebelum tenggat' }
+    hasil = { ...dasar, total: 0, rincian: [], mahasiswa: { nim: konteks.nim }, kelas: konteks.kelas, catatan: 'tidak ada commit sebelum tenggat' }
   } else {
     const dir = mkdtempSync(join(tmpdir(), 'uts-fork-'))
     jalankan('git', ['clone', '--quiet', `https://github.com/${repo}.git`, dir])
     jalankan('git', ['checkout', '--quiet', target.sha], dir)
     const arsip = outDir ? buatArsip(dir, repo, target.sha, join(outDir, 'arsip')) : undefined
-    hasil = { ...dasar, ...target, arsip, ...(await periksa({ appDir: join(dir, 'app'), url: urlPages(repo), pasang: true, konteks: { ...konteks, sha: target.sha } })) }
-    rmSync(dir, { recursive: true, force: true })
+    hasil = { ...dasar, ...target, arsip, ...(await periksa({ appDir: join(dir, 'app'), url: urlPages(repo), pasang: true, konteks })) }
+    hapus(dir)
   }
   if (outDir) {
     mkdirSync(outDir, { recursive: true })
-    writeFileSync(join(outDir, `${repo.replace('/', '__')}.json`), JSON.stringify(hasil, null, 2))
+    const nama = join(outDir, `${repo.replace('/', '__')}.json`)
+    const isi = JSON.stringify(hasil, null, 2)
+    if (sandi) writeFileSync(`${nama}.enc`, kunci(Buffer.from(isi), readFileSync(sandi, 'utf8')))
+    else writeFileSync(nama, isi)
   }
   return hasil
 }
@@ -397,7 +456,9 @@ async function main() {
   }
   let hasil
   if (opsi('repo')) {
-    hasil = await periksaRepo(opsi('repo'), opsi('out'), opsi('target-file'), daftarKelas)
+    hasil = await periksaRepo(opsi('repo'), opsi('out'), opsi('target-file'), daftarKelas, opsi('sandi'))
+    // Log Actions repo induk bisa dibaca publik: hasil terenkripsi tidak dicetak.
+    if (opsi('sandi')) return console.log(`Selesai: ${opsi('repo')}`)
   } else {
     const appDir = resolve(opsi('lokal') ?? 'app')
     const url = opsi('url') ?? urlDariGit(appDir)
