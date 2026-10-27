@@ -1,10 +1,82 @@
 [
   {
     "id": "1",
-    "judul": "Contoh item pertama",
-    "kategori": "Contoh",
-    "fieldTema1": "ganti sesuai field tema",
-    "fieldTema2": 0,
-    "fieldTema3": "ganti sesuai field tema"
+    "judul": "Interstellar",
+    "kategori": "Science Fiction",
+    "sutradara": "Christopher Nolan",
+    "tahunRilis": 2014,
+    "rating": "8.6"
+  },
+  {
+    "id": "2",
+    "judul": "Inception",
+    "kategori": "Science Fiction",
+    "sutradara": " Christopher Nolan",
+    "tahunRilis": 2010,
+    "rating": "8.8"
+  },
+  {
+    "id": "3",
+    "judul": "The Dark Knight",
+    "kategori": "Action",
+    "sutradara": "Christopher Nolan",
+    "tahunRilis": 2008,
+    "rating": "9.0"
+  },
+  {
+    "id": "4",
+    "judul": "The Matrix",
+    "kategori": "Science Fiction",
+    "sutradara": " Lana Wachowski, Lilly Wachowski",
+    "tahunRilis": 1999,
+    "rating": "8.7"
+  },
+  {
+    "id": "5",
+    "judul": "Pulp Fiction",
+    "kategori": "Crime",
+    "sutradara": "Quentin Tarantino",
+    "tahunRilis": 1994,
+    "rating": "8.9"
+  },
+  {
+    "id": "6",
+    "judul": "The Shawshank Redemption",
+    "kategori": "Drama",
+    "sutradara": "Frank Darabont",
+    "tahunRilis": 1994,
+    "rating": "9.3"
+  },
+  {
+    "id": "7",
+    "judul": "Fight Club",
+    "kategori": "Drama",
+    "sutradara": " David Fincher",
+    "tahunRilis": 1999,
+    "rating": "8.8"
+  },
+  {
+    "id": "8",
+    "judul": "Forrest Gump",
+    "kategori": "Drama",
+    "sutradara": " Robert Zemeckis",
+    "tahunRilis": 1994,
+    "rating": "8.8"
+  },
+  {
+    "id": "9",
+    "judul": "The Lord of the Rings: The Return of the King",
+    "kategori": "Fantasy",
+    "sutradara": " Peter Jackson",
+    "tahunRilis": 2003,
+    "rating": "8.9"
+  },
+  {
+    "id": "10",
+    "judul": "The Godfather",
+    "kategori": "Crime",
+    "sutradara": " Francis Ford Coppola",
+    "tahunRilis": 1972,
+    "rating": "9.2"
   }
 ]
