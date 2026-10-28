@@ -11,7 +11,7 @@
     "id": "2",
     "judul": "Inception",
     "kategori": "Science Fiction",
-    "sutradara": " Christopher Nolan",
+    "sutradara": "Christopher Nolan",
     "tahunRilis": 2010,
     "rating": "8.8"
   },
@@ -27,7 +27,7 @@
     "id": "4",
     "judul": "The Matrix",
     "kategori": "Science Fiction",
-    "sutradara": " Lana Wachowski, Lilly Wachowski",
+    "sutradara": "Lana Wachowski, Lilly Wachowski",
     "tahunRilis": 1999,
     "rating": "8.7"
   },
@@ -51,7 +51,7 @@
     "id": "7",
     "judul": "Fight Club",
     "kategori": "Drama",
-    "sutradara": " David Fincher",
+    "sutradara": "David Fincher",
     "tahunRilis": 1999,
     "rating": "8.8"
   },
@@ -59,7 +59,7 @@
     "id": "8",
     "judul": "Forrest Gump",
     "kategori": "Drama",
-    "sutradara": " Robert Zemeckis",
+    "sutradara": "Robert Zemeckis",
     "tahunRilis": 1994,
     "rating": "8.8"
   },
@@ -67,7 +67,7 @@
     "id": "9",
     "judul": "The Lord of the Rings: The Return of the King",
     "kategori": "Fantasy",
-    "sutradara": " Peter Jackson",
+    "sutradara": "Peter Jackson",
     "tahunRilis": 2003,
     "rating": "8.9"
   },
@@ -75,7 +75,7 @@
     "id": "10",
     "judul": "The Godfather",
     "kategori": "Crime",
-    "sutradara": " Francis Ford Coppola",
+    "sutradara": "Francis Ford Coppola",
     "tahunRilis": 1972,
     "rating": "9.2"
   }
