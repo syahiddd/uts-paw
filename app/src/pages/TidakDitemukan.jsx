@@ -1,7 +1,11 @@
-export default function Koleksi() {
-    return (
-        <div>
-            <h1>Koleksi</h1>
-        </div>
-    );
+import { Link } from "react-router-dom";
+
+export default function TidakDitemukan() {
+  return (
+    <section>
+      <h1>404</h1>
+      <p>Halaman tidak ditemukan.</p>
+      <Link to="/">Kembali ke beranda</Link>
+    </section>
+  );
 }
