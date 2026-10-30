@@ -17,7 +17,7 @@ export default function Beranda() {
           Ada {items.length} film dalam {jumlahKategori} kategori.
         </p>
       )}
-      <Link to="/koleksi">Lihat semua film</Link>
+      <Link to="/koleksi" id = "lihat">Lihat semua film</Link>
     </section>
   )
 }

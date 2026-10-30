@@ -11,7 +11,7 @@ export default function Detail() {
   if (!item) {
     return (
       <section>
-        <h1>Item tidak ditemukan</h1>
+        <h1>Film tidak ditemukan</h1>
         <Link to="/koleksi">Kembali ke koleksi</Link>
       </section>
     );

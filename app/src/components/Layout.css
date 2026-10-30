@@ -103,3 +103,24 @@
     grid-template-columns: 1fr;
   }
 }
+
+#lihat {
+  display: inline-block;
+}
+
+#kaki {
+  text-align: center;
+}
+
+#koleksi {
+  flex-direction: column;
+}
+
+#lihat:hover {
+  color: #923535;
+}
+
+#kaki:focus {
+  outline: 2px solid #923535;
+  outline-offset: 2px;
+}

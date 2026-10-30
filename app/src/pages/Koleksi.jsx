@@ -21,7 +21,7 @@ export default function Koleksi() {
   return (
     <section>
       <h1>Koleksi</h1>
-      <div className="alat-koleksi">
+      <div className="alat-koleksi" id = "koleksi">
         <KotakPencarian nilai={cari} onUbah={setCari} />
         <select aria-label="Kategori" value={kategori} onChange={(e) => setKategori(e.target.value)}>
           {daftarKategori.map((k) => (

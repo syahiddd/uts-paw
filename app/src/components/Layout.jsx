@@ -25,7 +25,7 @@ export default function Layout() {
       <main className="isi">
         <Outlet />
       </main>
-      <footer className="kaki">
+      <footer className="kaki" id = "kaki">
         Ujian Tengah Semester Pengembangan Aplikasi Web
       </footer>
     </div>
