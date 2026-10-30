@@ -71,7 +71,12 @@ Kelas: RA
 Tema: Daftar Tontonan Film dan Serial
 Deployment: https://syahiddd.github.io/uts-paw/
 
-![Tangkapan layar beranda](docs/beranda.png)
+![Tangkapan layar beranda](./docs/BERANDA.png)
+![Tangkapan layar koleksi](./docs/KOLEKSI.png)
+![Tangkapan layar statistik](./docs/STATISTIK.png)
+![Tangkapan layar tentang](./docs/TENTANG.png)
+
+
 
 ## Fitur
 

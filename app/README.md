@@ -12,8 +12,8 @@ Daftar Fitur :
 
 Tangkapan layar
 
-[![Tangkapan layar beranda](../app/docs/beranda.png)]
-[![Tangkapan layar detail](../app/docs/detail.png)]
-[![Tangkapan layar koleksi](../app/docs/koleksi.png)]
-[![Tangkapan layar statistik](../app/docs/statistik.png)]
-[![Tangkapan layar tentang](../app/docs/tentang.png)]
+[![Tangkapan layar beranda](../app/docs/BERANDA.png)]
+[![Tangkapan layar detail](../app/docs/DETAIL.png)]
+[![Tangkapan layar koleksi](../app/docs/KOLEKSI.png)]
+[![Tangkapan layar statistik](../app/docs/STATISTIK.png)]
+[![Tangkapan layar tentang](../app/docs/TENTANG.png)]
